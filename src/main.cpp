@@ -1,101 +1,122 @@
-#include <Arduino.h>
+#define BLYNK_TEMPLATE_ID "TMPL6p0FDTVJl"
+#define BLYNK_TEMPLATE_NAME "ESP32WATER"
+#define BLYNK_AUTH_TOKEN "sWa5g-ivAel25JPdFa_iJQhA5sHuEAYx"
 
-// Definisikan pin untuk tombol dan LED
-const int button1Pin = 22; // Tombol 1
-const int button2Pin = 21; // Tombol 2
-const int button3Pin = 19; // Tombol 3
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <WiFi.h>
+#include <WiFiClient.h>
+#include <BlynkSimpleEsp32.h>
 
-const int led1Pin = 12;    // LED merah
-const int led2Pin = 14;    // LED kuning
-const int led3Pin = 13;    // LED hijau
+// OLED setup
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
-// Variabel debounce
-unsigned long lastDebounceTime1 = 0;
-unsigned long lastDebounceTime2 = 0;
-unsigned long lastDebounceTime3 = 0;
-const unsigned long debounceDelay = 50;
+// Pin setup
+const int LED1 = 26; // Hijau
+const int LED2 = 27; // Merah
+const int pot1Pin = 33;
+const int pot2Pin = 32;
+const int pot3Pin = 35;
 
-// Variabel status tombol sebelumnya
-int lastButton1State = HIGH;
-int lastButton2State = HIGH;
-int lastButton3State = HIGH;
+// WiFi credentials
+char ssid[] = "Wokwi-GUEST";
+char pass[] = "";
 
-// Fungsi untuk membuat LED berkedip non-blocking
-void blinkLED(int pin, int times, int delayTime) {
-  for (int i = 0; i < times; i++) {
-    digitalWrite(pin, HIGH);
-    delay(delayTime);
-    digitalWrite(pin, LOW);
-    delay(delayTime);
-  }
-}
+// Sensor values
+int val1 = 0;
+int val2 = 0;
+int val3 = 0;
 
 void setup() {
-  // Inisialisasi pin tombol sebagai input dengan pull-up
-  pinMode(button1Pin, INPUT_PULLUP);
-  pinMode(button2Pin, INPUT_PULLUP);
-  pinMode(button3Pin, INPUT_PULLUP);
+  Serial.begin(115200);
+  Serial.println("Setup started");
 
-  // Inisialisasi pin LED sebagai output
-  pinMode(led1Pin, OUTPUT);
-  pinMode(led2Pin, OUTPUT);
-  pinMode(led3Pin, OUTPUT);
+  // LED setup
+  pinMode(LED1, OUTPUT);
+  pinMode(LED2, OUTPUT);
+  digitalWrite(LED1, LOW);
+  digitalWrite(LED2, LOW);
 
-  // Matikan semua LED pada awal
-  digitalWrite(led1Pin, LOW);
-  digitalWrite(led2Pin, LOW);
-  digitalWrite(led3Pin, LOW);
+  // OLED setup
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+    Serial.println("OLED gagal, lanjut tanpa OLED");
+  } else {
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setTextColor(SSD1306_WHITE);
+    display.setCursor(0, 0);
+    display.println("ESP32 Ready!");
+    display.display();
+  }
+
+  delay(1000);
+
+  // WiFi connection
+  WiFi.begin(ssid, pass);
+  Serial.print("Menghubungkan WiFi");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nWiFi Terhubung");
+
+  // Connect to Blynk (non-blocking)
+  Blynk.config(BLYNK_AUTH_TOKEN);
+  Blynk.connect(5000);  // timeout 5 detik
+
+  // Display success
+  display.clearDisplay();
+  display.setCursor(0, 0);
+  display.println("WiFi & Blynk Terhubung!");
+  display.display();
+  delay(1000);
+
+  Serial.println("WiFi & Blynk Terhubung...");
+  Serial.println("==============================");
 }
 
 void loop() {
-  int button1State = digitalRead(button1Pin);
-  int button2State = digitalRead(button2Pin);
-  int button3State = digitalRead(button3Pin);
+  Blynk.run();
 
-  unsigned long currentMillis = millis();
+  // Baca nilai potensiometer
+  val1 = analogRead(pot1Pin);
+  val2 = analogRead(pot2Pin);
+  val3 = analogRead(pot3Pin);
 
-  // Cek Tombol 1
-  if (button1State == LOW && lastButton1State == HIGH && (currentMillis - lastDebounceTime1 > debounceDelay)) {
-    lastDebounceTime1 = currentMillis;
-    blinkLED(led1Pin, 5, 500);
+  // Kirim data ke Blynk
+  Blynk.virtualWrite(V0, val1);
+  Blynk.virtualWrite(V1, val2);
+  Blynk.virtualWrite(V2, val3);
+
+  // Tampilkan di OLED
+  display.clearDisplay();
+  display.setCursor(0, 0);
+  display.print("Pot1: "); display.println(val1);
+  display.print("Pot2: "); display.println(val2);
+  display.print("Pot3: "); display.println(val3);
+
+  // Cek status aman / tidak aman
+  if (val1 < 2000 && val2 < 2000 && val3 < 2000) {
+    digitalWrite(LED1, HIGH);  // Hijau ON
+    digitalWrite(LED2, LOW);   // Merah OFF
+    display.println("Status: AMAN");
+
+    Serial.println("[STATUS] Semua sensor di bawah ambang batas.");
+    Serial.println("LED Hijau: ON | LED Merah: OFF | Status: AMAN");
+  } else {
+    digitalWrite(LED1, LOW);   // Hijau OFF
+    digitalWrite(LED2, HIGH);  // Merah ON
+    display.println("Status: TIDAK AMAN");
+
+    Serial.println("[STATUS] Sensor melebihi ambang batas!");
+    Serial.println("LED Hijau: OFF | LED Merah: ON | Status: TIDAK AMAN");
   }
-  lastButton1State = button1State;
 
-  // Cek Tombol 2
-  if (button2State == LOW && lastButton2State == HIGH && (currentMillis - lastDebounceTime2 > debounceDelay)) {
-    lastDebounceTime2 = currentMillis;
-    for (int i = 0; i < 5; i++) {
-      digitalWrite(led1Pin, HIGH); 
-      digitalWrite(led3Pin, LOW);
-      delay(500);
-      digitalWrite(led1Pin, LOW);
-      digitalWrite(led3Pin, HIGH);
-      delay(500);
-    }
-    digitalWrite(led1Pin, LOW);
-    digitalWrite(led3Pin, LOW);
-  }
-  lastButton2State = button2State;
+  display.display(); // Update OLED
 
-  // Cek Tombol 3
-  if (button3State == LOW && lastButton3State == HIGH && (currentMillis - lastDebounceTime3 > debounceDelay)) {
-    lastDebounceTime3 = currentMillis;
-    for (int i = 0; i < 5; i++) {
-      digitalWrite(led1Pin, HIGH);
-      digitalWrite(led2Pin, LOW);
-      digitalWrite(led3Pin, LOW);
-      delay(500);
-
-      digitalWrite(led1Pin, LOW);
-      digitalWrite(led2Pin, HIGH);
-      delay(500);
-
-      digitalWrite(led2Pin, LOW);
-      digitalWrite(led3Pin, HIGH);
-      delay(500);
-
-      digitalWrite(led3Pin, LOW);
-    }
-  }
-  lastButton3State = button3State;
+  Serial.println("------------------------------");
+delay(500);
 }
